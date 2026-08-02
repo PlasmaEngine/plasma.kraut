@@ -1,0 +1,21 @@
+// for a description of the options see:
+// Code/EditorPlugins/Assets/EditorPluginAssets/Assets.plPluginBundle
+
+PluginInfo
+{
+	string %DisplayName{"Kraut Tree"}
+	string %Category{"Rendering"}
+	string %MinEngineVersion{"0.7.0"}
+	string %MaxEngineVersion{"0.7.0"}
+	string %Icon{"KrautIcon.png"}
+    string %Banner{"KrautBanner.png"}
+	string %Description{"Adds support for procedurally generated trees."}
+	string %EditorPlugins{"plEditorPluginKraut"}
+	string %EditorEnginePlugins{"plEnginePluginKraut"}
+	string %RuntimePlugins{"plKrautPlugin"}
+	string %PackageDependencies{}
+	string %RequiredPlugins{}
+	string %ExclusiveFeatures{}
+	string %EnabledInTemplates{}
+	string %PlasmaBuildTargetName{"KrautPlugin"}
+}

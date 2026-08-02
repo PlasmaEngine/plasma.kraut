@@ -1,0 +1,13 @@
+<RCC>
+  <qresource prefix="AssetIcons">
+    <file>Kraut_Tree.svg</file>
+  </qresource>
+  <qresource prefix="TypeIcons">
+    <file>plKrautTreeComponent.svg</file>
+  </qresource>
+  <qresource prefix="EditorPluginKraut">
+    <file>Wind.svg</file>
+    <file>Leaf.svg</file>
+  </qresource>
+</RCC>
+

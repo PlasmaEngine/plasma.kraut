@@ -1,0 +1,286 @@
+#include <EnginePluginKraut/EnginePluginKrautPCH.h>
+
+#include <EnginePluginKraut/KrautTreeAsset/KrautTreeContext.h>
+#include <EnginePluginKraut/KrautTreeAsset/KrautTreeView.h>
+
+#include <GameEngine/Effects/Wind/SimpleWindComponent.h>
+#include <KrautPlugin/Resources/KrautGeneratorResource.h>
+#include <RendererCore/Components/SkyBoxComponent.h>
+
+// clang-format off
+PL_BEGIN_DYNAMIC_REFLECTED_TYPE(plKrautTreeContext, 1, plRTTIDefaultAllocator<plKrautTreeContext>)
+{
+  PL_BEGIN_PROPERTIES
+  {
+    PL_CONSTANT_PROPERTY("DocumentType", (const char*) "Kraut Tree"),
+  }
+  PL_END_PROPERTIES;
+}
+PL_END_DYNAMIC_REFLECTED_TYPE;
+// clang-format on
+
+plKrautTreeContext::plKrautTreeContext()
+  : plEngineProcessDocumentContext(plEngineProcessDocumentContextFlags::CreateWorld)
+{
+  m_pMainObject = nullptr;
+}
+
+void plKrautTreeContext::HandleMessage(const plEditorEngineDocumentMsg* pMsg0)
+{
+  if (auto pMsg = plDynamicCast<const plQuerySelectionBBoxMsgToEngine*>(pMsg0))
+  {
+    QuerySelectionBBox(pMsg);
+    return;
+  }
+
+  if (auto pMsg = plDynamicCast<const plSimpleDocumentConfigMsgToEngine*>(pMsg0))
+  {
+    if (pMsg->m_sWhatToDo == "UpdateTree" && !m_hKrautComponent.IsInvalidated())
+    {
+      PL_LOCK(m_pWorld->GetWriteMarker());
+
+      plKrautTreeComponent* pTree = nullptr;
+      if (!m_pWorld->TryGetComponent(m_hKrautComponent, pTree))
+        return;
+
+      if (pMsg->m_sPayload == "DisplayRandomSeed")
+      {
+        m_uiDisplayRandomSeed = pMsg->m_PayloadValue.ConvertTo<plUInt32>();
+
+        pTree->SetCustomRandomSeed(m_uiDisplayRandomSeed);
+      }
+    }
+
+    if (pMsg->m_sWhatToDo == "SetWindStrength" && !m_hWindComponent.IsInvalidated())
+    {
+      PL_LOCK(m_pWorld->GetWriteMarker());
+
+      plSimpleWindComponent* pWind = nullptr;
+      if (!m_pWorld->TryGetComponent(m_hWindComponent, pWind))
+        return;
+
+      const plInt32 windStrength = pMsg->m_PayloadValue.ConvertTo<plInt32>();
+
+      switch (windStrength)
+      {
+        case 0: // Off
+          pWind->m_MinWindStrength = plWindStrength::None;
+          pWind->m_MaxWindStrength = plWindStrength::None;
+          break;
+
+        case 1: // Light
+          pWind->m_MinWindStrength = plWindStrength::Calm;
+          pWind->m_MaxWindStrength = plWindStrength::GentleBreeze;
+          break;
+
+        case 2: // Moderate
+          pWind->m_MinWindStrength = plWindStrength::GentleBreeze;
+          pWind->m_MaxWindStrength = plWindStrength::StrongBreeze;
+          break;
+
+        case 3: // Strong
+          pWind->m_MinWindStrength = plWindStrength::Storm;
+          pWind->m_MaxWindStrength = plWindStrength::Storm;
+          break;
+      }
+    }
+
+    if (pMsg->m_sWhatToDo == "SetLodOverride" && !m_hKrautComponent.IsInvalidated())
+    {
+      PL_LOCK(m_pWorld->GetWriteMarker());
+
+      plKrautTreeComponent* pTree = nullptr;
+      if (!m_pWorld->TryGetComponent(m_hKrautComponent, pTree))
+        return;
+
+      const plInt8 iLodOverride = static_cast<plInt8>(pMsg->m_PayloadValue.ConvertTo<plInt32>());
+      pTree->m_iLodOverride = iLodOverride;
+    }
+
+    if (pMsg->m_sWhatToDo == "SetShowFrondsLeaves" && !m_hKrautComponent.IsInvalidated())
+    {
+      PL_LOCK(m_pWorld->GetWriteMarker());
+
+      plKrautTreeComponent* pTree = nullptr;
+      if (!m_pWorld->TryGetComponent(m_hKrautComponent, pTree))
+        return;
+
+      pTree->m_bHideFrondsAndLeafs = !pMsg->m_PayloadValue.ConvertTo<bool>();
+    }
+
+    return;
+  }
+
+  plEngineProcessDocumentContext::HandleMessage(pMsg0);
+}
+
+void plKrautTreeContext::OnInitialize()
+{
+  auto pWorld = m_pWorld;
+  PL_LOCK(pWorld->GetWriteMarker());
+
+
+  plKrautTreeComponent* pTree = nullptr;
+
+  // Preview Mesh
+  {
+    plGameObjectDesc obj;
+    obj.m_sName.Assign("KrautTreePreview");
+    // TODO: making the object dynamic is a workaround!
+    // without it, shadows keep disappearing when switching between tree documents
+    // triggering resource reload will also trigger plKrautTreeComponent::OnMsgExtractRenderData,
+    // which fixes the shadows for a while, but not caching the render-data (plRenderData::Caching::IfStatic)
+    // 'solves' the issue in the preview
+    obj.m_bDynamic = true;
+    pWorld->CreateObject(obj, m_pMainObject);
+
+    const plTag& tagCastShadows = plTagRegistry::GetGlobalRegistry().RegisterTag("CastShadow");
+    m_pMainObject->SetTag(tagCastShadows);
+
+    m_hKrautComponent = plKrautTreeComponent::CreateComponent(m_pMainObject, pTree);
+    plStringBuilder sMeshGuid;
+    plConversionUtils::ToString(GetDocumentGuid(), sMeshGuid);
+    m_hMainResource = plResourceManager::LoadResource<plKrautGeneratorResource>(sMeshGuid);
+    pTree->SetVariationIndex(0xFFFF); // takes the 'display seed'
+    pTree->SetKrautGeneratorResource(m_hMainResource);
+    pTree->m_bForceGenerateImmediate = true;
+  }
+
+
+  // Wind
+  {
+    plGameObjectDesc obj;
+    obj.m_sName.Assign("Wind");
+
+    plGameObject* pObj;
+    pWorld->CreateObject(obj, pObj);
+
+    plSimpleWindComponent* pWind = nullptr;
+    m_hWindComponent = plSimpleWindComponent::CreateComponent(pObj, pWind);
+
+    pWind->m_Deviation = plAngle::MakeFromDegree(180);
+    pWind->m_MinWindStrength = plWindStrength::LightBreeze;
+    pWind->m_MaxWindStrength = plWindStrength::GentleBreeze;
+  }
+
+  // ground
+  {
+    const char* szMeshName = "KrautPreviewGroundMesh";
+    m_hPreviewMeshResource = plResourceManager::GetExistingResource<plMeshResource>(szMeshName);
+
+    if (!m_hPreviewMeshResource.IsValid())
+    {
+      const char* szMeshBufferName = "KrautPreviewGroundMeshBuffer";
+
+      plMeshBufferResourceHandle hMeshBuffer = plResourceManager::GetExistingResource<plMeshBufferResource>(szMeshBufferName);
+
+      if (!hMeshBuffer.IsValid())
+      {
+        // Build geometry
+        plGeometry::GeoOptions opt;
+        opt.m_Transform = plMat4::MakeTranslation(plVec3(0, 0, -0.05f));
+
+        plGeometry geom;
+        geom.AddCylinder(8.0f, 7.9f, 0.05f, 0.05f, true, true, 32, opt);
+        geom.TriangulatePolygons();
+        geom.ComputeTangents();
+
+        plMeshBufferResourceDescriptor desc;
+        desc.AddCommonStreams();
+        desc.AllocateStreamsFromGeometry(geom, plGALPrimitiveTopology::Triangles);
+
+        hMeshBuffer = plResourceManager::GetOrCreateResource<plMeshBufferResource>(szMeshBufferName, std::move(desc), szMeshBufferName);
+      }
+      {
+        plResourceLock<plMeshBufferResource> pMeshBuffer(hMeshBuffer, plResourceAcquireMode::AllowLoadingFallback);
+
+        plMeshResourceDescriptor md;
+        md.UseExistingMeshBuffer(hMeshBuffer);
+        md.AddSubMesh(pMeshBuffer->GetPrimitiveCount(), 0, 0);
+        md.SetMaterial(0, "{ 1c47ee4c-0379-4280-85f5-b8cda61941d2 }"); // Pattern.plMaterialAsset
+        md.ComputeBounds();
+
+        m_hPreviewMeshResource = plResourceManager::GetOrCreateResource<plMeshResource>(szMeshName, std::move(md), pMeshBuffer->GetResourceDescription());
+      }
+    }
+
+    // Ground Mesh Component
+    {
+      plGameObjectDesc obj;
+      obj.m_sName.Assign("KrautGround");
+
+      plGameObject* pObj;
+      pWorld->CreateObject(obj, pObj);
+
+      plMeshComponent* pMesh;
+      plMeshComponent::CreateComponent(pObj, pMesh);
+      pMesh->SetMesh(m_hPreviewMeshResource);
+    }
+  }
+}
+
+plEngineProcessViewContext* plKrautTreeContext::CreateViewContext()
+{
+  return PL_DEFAULT_NEW(plKrautTreeViewContext, this);
+}
+
+void plKrautTreeContext::DestroyViewContext(plEngineProcessViewContext* pContext)
+{
+  PL_DEFAULT_DELETE(pContext);
+}
+
+bool plKrautTreeContext::UpdateThumbnailViewContext(plEngineProcessViewContext* pThumbnailViewContext)
+{
+  {
+    PL_LOCK(m_pWorld->GetWriteMarker());
+
+    m_pMainObject->UpdateLocalBounds();
+    m_pMainObject->UpdateGlobalTransformAndBounds();
+  }
+
+  plBoundingBoxSphere bounds = m_pMainObject->GetGlobalBounds();
+
+  // undo the artificial bounds scale to get a tight bbox for better thumbnails
+  const float fAdditionalZoom = 1.5f;
+  bounds.m_fSphereRadius /= plKrautTreeComponent::s_iLocalBoundsScale * fAdditionalZoom;
+  bounds.m_vBoxHalfExtends /= plKrautTreeComponent::s_iLocalBoundsScale * fAdditionalZoom;
+
+  plKrautTreeViewContext* pMeshViewContext = static_cast<plKrautTreeViewContext*>(pThumbnailViewContext);
+  return pMeshViewContext->UpdateThumbnailCamera(bounds);
+}
+
+
+void plKrautTreeContext::QuerySelectionBBox(const plEditorEngineDocumentMsg* pMsg)
+{
+  if (m_pMainObject == nullptr)
+    return;
+
+  plBoundingBoxSphere bounds = plBoundingBoxSphere::MakeInvalid();
+
+  {
+    PL_LOCK(m_pWorld->GetWriteMarker());
+
+    m_pMainObject->UpdateLocalBounds();
+    m_pMainObject->UpdateGlobalTransformAndBounds();
+    auto b = m_pMainObject->GetGlobalBounds();
+
+    if (b.IsValid())
+    {
+      b.m_fSphereRadius /= plKrautTreeComponent::s_iLocalBoundsScale;
+      b.m_vBoxHalfExtends /= (float)plKrautTreeComponent::s_iLocalBoundsScale;
+
+      bounds.ExpandToInclude(b);
+    }
+  }
+
+  const plQuerySelectionBBoxMsgToEngine* msg = static_cast<const plQuerySelectionBBoxMsgToEngine*>(pMsg);
+
+  plQuerySelectionBBoxResultMsgToEditor res;
+  res.m_uiViewID = msg->m_uiViewID;
+  res.m_iPurpose = msg->m_iPurpose;
+  res.m_vCenter = bounds.m_vCenter;
+  res.m_vHalfExtents = bounds.m_vBoxHalfExtends;
+  res.m_DocumentGuid = pMsg->m_DocumentGuid;
+
+  SendProcessMessage(&res);
+}

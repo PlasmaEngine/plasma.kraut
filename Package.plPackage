@@ -1,0 +1,104 @@
+// plasma.kraut — worked example: the in-tree Kraut plugin expressed as a package.
+//
+// This is the AUTHORED manifest, kept in source next to the plugin. It declares identity,
+// compatibility, dependencies, what to load and what to mount. It does NOT carry component
+// hashes or sizes — `plasmabuild package` computes those and emits them into the PUBLISHED
+// manifest that ships inside the .plpkg.
+//
+// Field reference and validation rules: Docs/PluginPackageManagerPlan.html §05.
+
+PackageInfo
+{
+	// ---- identity -------------------------------------------------------------
+	// Id is immutable and globally unique. Version is immutable once published;
+	// a mistake is fixed by publishing 1.2.1, never by replacing 1.2.0.
+	string %Id{"plasma.kraut"}
+	string %Version{"1.2.0"}
+	// Must match a Publishers row in the catalogue exactly - it is resolved by name.
+	string %Publisher{"PlasmaTechnology"}
+	string %License{"MIT"}
+	string %Homepage{"https://plasmagameengine.com"}
+
+	// No RepoUrl: this plugin's source lives in the private engine repository, and
+	// the index is published to a public registry. Point RepoUrl at somewhere the
+	// reader can actually reach, or leave it out - never at internal infrastructure.
+
+	// ---- compatibility --------------------------------------------------------
+	// AbiTag is mandatory because this package ships native binaries. A mismatch
+	// against the running engine is a hard refusal, not a warning — these DLLs
+	// share allocators, RTTI and reflection with the host.
+	//
+	// The trailing hash is a PLACEHOLDER. The publishing step must replace it with
+	// the real identifier of the engine build the binaries were compiled against;
+	// a tag nobody computes is decorative, and worse than having none.
+	string %MinEngineVersion{"0.7.0"}
+	string %MaxEngineVersion{"0.7.0"}
+	string %AbiTag{"win64-msvc-0.7.0-PLACEHOLDER"}
+
+	// ---- presentation ---------------------------------------------------------
+	// Icon and Banner resolve relative to THIS package's root, not to the shared
+	// Data/Plugins/Editor/Plugins folder they live in today.
+	string %DisplayName{"Kraut Tree"}
+	string %Category{"Rendering"}
+	string %Description{"Adds support for procedurally generated trees."}
+	string %Icon{"Branding/KrautIcon.png"}
+	string %Banner{"Branding/KrautBanner.png"}
+
+	// ---- binaries -------------------------------------------------------------
+	// Resolved against Bin/<Platform>_<Config>/ inside this package.
+	// The Kraut generator library (Code/ThirdParty/Kraut) is statically linked into
+	// plKrautPlugin, so it needs no entry here and no package of its own.
+	string %EditorPlugins{"plEditorPluginKraut"}
+	string %EditorEnginePlugins{"plEnginePluginKraut"}
+	string %RuntimePlugins{"plKrautPlugin"}
+	string %PackageDependencies{}
+
+	// ---- dependencies ---------------------------------------------------------
+	// plEditorPluginKraut links EditorPluginAssetsModule, so the Assets package must
+	// be loaded first. Built-ins are declared like anything else.
+	Requires { string %Id{"plasma.assets"} string %Range{"^1.0"} }
+
+	// Kraut claims no exclusive capability slot — several tree systems can coexist.
+	string %Provides{}
+	string %Conflicts{}
+
+	// ---- mounts ---------------------------------------------------------------
+	// The asset subtree keeps its "Kraut/" folder name on purpose. Branch.plMaterial
+	// and friends reference "Kraut/Kraut.plShader" — a path relative to the data
+	// directory root — so flattening Assets/Kraut/* to Assets/* would break every
+	// material in the package and in every project that already references them.
+	Mount { string %Path{"Assets"} string %RootName{"plasma.kraut"} bool %Writable{false} }
+
+	// 117 lines of editor string tables, today stranded in
+	// Data/Tools/plEditor/Localization/en/KrautPlugin.txt.
+	Localization { string %Path{"Localization"} }
+
+	// ---- components -----------------------------------------------------------
+	// Declares what gets split into separate downloadable blobs. Hashes and sizes are
+	// filled in at publish time. Icon and banner are their own blobs so the Plugin
+	// Manager can render a package it has not installed.
+	Component { string %Name{"manifest"}        string %Platform{"any"}          }
+	Component { string %Name{"editor-win64"}    string %Platform{"win64"}        }
+	Component { string %Name{"runtime-win64"}   string %Platform{"win64"}        }
+	Component { string %Name{"runtime-linux64"} string %Platform{"linux64"}      }
+	Component { string %Name{"assets"}          string %Platform{"any"}          }
+	Component { string %Name{"localization"}    string %Platform{"any"}          }
+	Component { string %Name{"icon"}            string %Platform{"any"}          }
+	Component { string %Name{"banner"}          string %Platform{"any"}          }
+
+	// The standalone Kraut tree authoring tool: 427 MB, needed only by people who
+	// actually author .tree files, and never by the runtime. Optional components are
+	// listed in the index and installed on request, not by default.
+	Component
+	{
+		string %Name{"tool-krauteditor"}
+		string %Platform{"win64"}
+		string %Path{"Tools/KrautEditor"}
+		bool   %Optional{true}
+		string %Label{"Kraut tree authoring tool"}
+	}
+
+	// ---- build ----------------------------------------------------------------
+	string %PlasmaBuildTargetName{"KrautPlugin"}
+	string %EnabledInTemplates{}
+}

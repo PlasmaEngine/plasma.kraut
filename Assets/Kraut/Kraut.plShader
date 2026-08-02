@@ -1,0 +1,556 @@
+[PLATFORMS]
+ALL
+
+[PERMUTATIONS]
+
+BLEND_MODE
+RENDER_PASS
+SHADING_MODE
+SHADING_WORKFLOW
+TWO_SIDED
+FLIP_WINDING = FALSE
+MSAA
+CAMERA_MODE
+SHADING_QUALITY
+SHADOW_QUALITY
+FORWARD_PASS_WRITE_DEPTH
+MATERIAL_PREVIEW
+
+[MATERIALPARAMETER]
+
+Permutation BLEND_MODE;
+Permutation SHADING_MODE;
+Permutation SHADING_WORKFLOW;
+Permutation TWO_SIDED;
+
+float MaskThreshold @Default(0.5);
+
+Texture2D BaseTexture;
+
+Color VariationColor @Default(Color(0.0, 0.0, 0.0, 0.0)); // actually variation color
+
+bool UseNormalTexture;
+Texture2D NormalTexture;
+
+bool UseRoughnessTexture @Group("Metallic-Roughness");
+Texture2D RoughnessTexture @Default("White.color") @Group("Metallic-Roughness");
+float RoughnessValue @Default(1.0) @Clamp(0.0, 2.0) @Group("Metallic-Roughness");
+
+bool UseMetallicTexture @Group("Metallic-Roughness");
+Texture2D MetallicTexture @Group("Metallic-Roughness");
+float MetallicValue @Default(0.0) @Clamp(0.0, 2.0) @Group("Metallic-Roughness");
+
+bool UseSpecularTexture @Group("Specular-Gloss");
+Texture2D SpecularTexture @Group("Specular-Gloss");
+Color SpecularColor @Default(Color(0.04, 0.04, 0.04)) @Group("Specular-Gloss");
+
+bool UseGlossTexture @Group("Specular-Gloss");
+Texture2D GlossTexture @Group("Specular-Gloss");
+float GlossValue @Default(0.5) @Clamp(0.0, 2.0) @Group("Specular-Gloss");
+
+bool UseOcclusionTexture;
+Texture2D OcclusionTexture;
+
+Color SubsurfaceColor @Default(Color(0.2, 0.4, 0.1)) @Group("Subsurface");
+float SubsurfaceScatterPower @Default(12.0) @Clamp(1.0, 32.0) @Group("Subsurface");
+float SubsurfaceShadowFalloff @Default(0.5) @Clamp(0.0, 1.0) @Group("Subsurface");
+float SubsurfaceWrap @Default(0.5) @Clamp(0.0, 1.0) @Group("Subsurface");
+float SubsurfaceDistortion @Default(0.1) @Clamp(0.0, 0.5) @Group("Subsurface");
+float TransmissionIntensity @Default(1.0) @Clamp(0.0, 2.0) @Group("Subsurface");
+
+bool UseTranslucencyTexture @Group("Translucency");
+Texture2D TranslucencyTexture @Group("Translucency");
+float TranslucencyStrength @Default(1.0) @Clamp(0.0, 2.0) @Group("Translucency");
+
+int KrautTreeMode; // 0 == regular mesh, 1 == frond, 2 == leaf, 3 == static impostor, 4 == billboard impostor
+
+[MATERIALCONFIG]
+
+#include <Shaders/Materials/MaterialConfig.h>
+
+[RENDERSTATE]
+
+#include <Shaders/Materials/MaterialState.h>
+
+[SHADER]
+
+#define USE_COLOR0
+#define USE_COLOR1
+#define USE_NORMAL
+#define USE_TANGENT
+#define USE_TEXCOORD0
+#define USE_TEXCOORD1
+#define CUSTOM_INTERPOLATOR float3 LeafNormal : TEXCOORD2;
+#define USE_MATERIAL_SUBSURFACE_COLOR
+#define USE_MATERIAL_SUBSURFACE_PARAMS
+
+#if RENDER_PASS == RENDER_PASS_EDITOR
+  #define USE_DEBUG_INTERPOLATOR
+#endif
+
+[MATERIALCONSTANTS]
+
+  FLOAT1(MaskThreshold);
+  COLOR4F(VariationColor);
+  FLOAT1(RoughnessValue);
+  FLOAT1(GlossValue);
+  FLOAT1(MetallicValue);
+  BOOL1(UseNormalTexture);
+  BOOL1(UseRoughnessTexture);
+  BOOL1(UseGlossTexture);
+  BOOL1(UseMetallicTexture);
+  BOOL1(UseSpecularTexture);
+  BOOL1(UseOcclusionTexture);
+  COLOR4F(SpecularColor);
+  COLOR4F(SubsurfaceColor);
+  FLOAT1(SubsurfaceScatterPower);
+  FLOAT1(SubsurfaceShadowFalloff);
+  FLOAT1(SubsurfaceWrap);
+  FLOAT1(SubsurfaceDistortion);
+  FLOAT1(TransmissionIntensity);
+  BOOL1(UseTranslucencyTexture);
+  FLOAT1(TranslucencyStrength);
+  INT1(KrautTreeMode);
+
+[VERTEXSHADER]
+
+#include <Shaders/Materials/MaterialVertexShader.h>
+
+float3 BendPosition(float3 position, float positionBend, float3 anchorPre, float3 anchorPost, float3 wind, float flutter)
+{
+  position -= anchorPre;
+  float distToAnchor = length(position);
+
+  position.x += wind.x * positionBend;
+  position.y += wind.y * positionBend;
+  position.z += flutter;
+
+  return anchorPost + normalize(position) * distToAnchor;
+}
+
+float3 ComputeWind(float phasedTime, float3 localPosition, float4 vWindTrunk, float4 vWindBranches, float fBendAndFlutterStrength, float fBranchLevel, float fFlutterPhase, float3 vBendAnchorPre, float fBendAnchorStrength)
+{
+  // wind direction is always in local object space
+  // but uses the global 0 - 20 m/sec speed range (w component and length) no matter the object scale
+
+  float fFlutterAmplitude = 0.1; // expose ?
+
+  float fFastFlutterWindSpeed = 15.0; // constant
+  float fMinFlutterWindSpeed = 1.0; // constant (always have some flutter)
+  float fMaxFlutterWindSpeed = 20.0; // constant
+  float fFlutterPhaseShift = 1.9; // constant (sin(x) + sin(x*1.9) looks good)
+  float fSlowFlutterSpeed = 1.0; // constant (blend between slow and fast)
+  float fFastFlutterSpeed = 10.0; // constant
+
+  float3 vBendAnchorPost = BendPosition(vBendAnchorPre, fBendAnchorStrength, float3(0, 0, 0), float3(0, 0, 0), vWindTrunk.xyz, 0);
+
+  [branch]
+  if (fBranchLevel == 0)
+  {
+    localPosition = BendPosition(localPosition, fBendAndFlutterStrength, vBendAnchorPre, vBendAnchorPost, vWindTrunk.xyz, 0);
+  }
+  else
+  {
+    float2 flutterSamplePos = float2(fFlutterPhase + phasedTime, (fFlutterPhase + phasedTime) * fFlutterPhaseShift);
+    float flutterAmount = fFlutterAmplitude * fBendAndFlutterStrength * clamp(vWindBranches.w, fMinFlutterWindSpeed, fMaxFlutterWindSpeed);
+
+    float2 flutterSlow = sin(flutterSamplePos * fSlowFlutterSpeed);
+    float2 flutterFast = sin(flutterSamplePos * fFastFlutterSpeed);
+    float2 flutter = lerp(flutterSlow, flutterFast, clamp(vWindBranches.w / fFastFlutterWindSpeed, 0, 1)) * flutterAmount;
+
+    localPosition = BendPosition(localPosition, fBendAndFlutterStrength, vBendAnchorPre, vBendAnchorPost, vWindBranches.xyz, flutter.x + flutter.y);
+  }
+
+  return localPosition;
+}
+
+VS_OUT main(VS_IN Input)
+{
+  VS_OUT result = FillVertexData(Input);
+
+  #if !MATERIAL_PREVIEW
+
+  plPerInstanceData data = GetInstanceData();
+  float4x4 objectToWorld = TransformToMatrix(data.ObjectToWorld);
+  float3 localPosition = Input.Position.xyz;
+
+  float3 scale;
+  scale.x = length(objectToWorld._m00_m10_m20);
+  scale.y = length(objectToWorld._m01_m11_m21);
+  scale.z = length(objectToWorld._m02_m12_m22);
+
+  // shift time by world space position (x, y) to make trees standing next to each other flutter out of phase
+  float phasedTime = WorldTime + objectToWorld._m03 + objectToWorld._m13;
+
+  localPosition = ComputeWind(phasedTime, localPosition, data.Color, data.Color, Input.Color0.r, Input.Color0.g, Input.Color0.b, Input.Color1.xyz, Input.Color1.w);
+
+  float4 worldPosition = mul(objectToWorld, float4(localPosition, 1));
+
+  result.LeafNormal = float3(0, 0, 0);
+  result.Color0 = Input.Color0;
+  result.Color1 = Input.Color1;
+
+  float globalUniformScale = dot(scale, 1.0 / 3.0);
+
+  [branch]
+  if (GetMaterialData(KrautTreeMode) == 4) // Billboard Impostor
+  {
+    worldPosition.xyz += GetCameraDirRight() * result.TexCoord1.x * globalUniformScale;
+    result.TexCoord1.x = 1.0;
+    result.Normal = -GetCameraDirForwards();
+    result.Normal.z = 0;
+    result.Normal = normalize(result.Normal);
+    result.Tangent = GetCameraDirRight();
+    result.BiTangent = float3(0, 0, 1);
+
+    float3 camDir = mul(-GetCameraDirForwards(), TransformToRotation(data.ObjectToWorld));
+    float3 mainDirs[8] =
+    {
+      float3(0, +1, 0),
+      float3(0.7071, 0.7071, 0),
+      float3(+1, 0, 0),
+      float3(0.7071, -0.7071, 0),
+      float3(0, -1, 0),
+      float3(-0.7071, -0.7071, 0),
+      float3(-1, 0, 0),
+      float3(-0.7071, +0.7071, 0)
+    };
+
+    int impostorFace = 0;
+    float bestDist = dot(mainDirs[0], camDir);
+
+    for (int i = 1; i < 8; ++i)
+    {
+      float dist = dot(mainDirs[i], camDir);
+
+      if (dist > bestDist)
+      {
+        impostorFace = i;
+        bestDist = dist;
+      }
+    }
+
+    // flip the texture along X if necessary
+    [flatten]
+    if (impostorFace >= 4)
+    {
+      // for billboards this is eiter 0 or 0.25
+      float xcoord = result.TexCoord0.x;
+
+      result.TexCoord0.x -= xcoord * 2.0;
+      // also flip the tangent to fix the lighting
+      result.Tangent = -result.Tangent;
+    }
+
+    float impostorXoffset[8] = { 0.0, 0.25, 0.5, 0.75, 0.25, 0.5, 0.75, 1.0 };
+    result.TexCoord0.x += impostorXoffset[impostorFace];
+
+  }
+
+  [branch]
+  if (GetMaterialData(KrautTreeMode) == 2) // Leaf
+  {
+    float2 span = result.TexCoord0.xy * 2.0 - 1.0;
+    float size = result.TexCoord1.x * globalUniformScale;
+
+    result.TexCoord1.x = 1.0;
+    result.Normal = -GetCameraDirForwards();
+    result.Normal.z = 0;
+    result.Normal = normalize(result.Normal);
+    result.Tangent = GetCameraDirRight();
+    result.BiTangent = float3(0, 0, 1);
+
+    worldPosition.xyz += span.x * GetCameraDirRight() * size;
+    worldPosition.xyz += span.y * GetCameraDirUp() * size;
+
+    float3 leafCenter = mul(objectToWorld, float4(data.CustomData.xyz, 1)).xyz;
+    result.LeafNormal = worldPosition.xyz - leafCenter;
+
+    [branch]
+    if (IsShadowPass)
+    {
+      float3 camDir = normalize(worldPosition.xyz - GetCameraPosition());
+
+      worldPosition.xyz +=  camDir * size;
+    }
+  }
+
+  result.WorldPosition = worldPosition;
+
+  result.Position = mul(GetWorldToScreenMatrix(), worldPosition);
+
+  #endif
+
+  return result;
+}
+
+[PIXELSHADER]
+
+#define USE_MATERIAL_OCCLUSION
+#define USE_TWO_SIDED_LIGHTING
+#define USE_FOG
+#define USE_MATERIAL_SUBSURFACE_COLOR
+#define USE_MATERIAL_SUBSURFACE_PARAMS
+#define MATERIAL_FOLIAGE
+
+// Use simple material model for metallic-roughness workflow
+#if SHADING_WORKFLOW != SHADING_WORKFLOW_SPECULAR_GLOSS
+#define USE_SIMPLE_MATERIAL_MODEL
+#endif
+
+#include <Shaders/Materials/MaterialPixelShader.h>
+
+Texture2D BaseTexture BIND_GROUP(BG_MATERIAL);
+SamplerState BaseTexture_AutoSampler BIND_GROUP(BG_MATERIAL);
+
+Texture2D NormalTexture BIND_GROUP(BG_MATERIAL);
+SamplerState NormalTexture_AutoSampler BIND_GROUP(BG_MATERIAL);
+
+Texture2D RoughnessTexture BIND_GROUP(BG_MATERIAL);
+SamplerState RoughnessTexture_AutoSampler BIND_GROUP(BG_MATERIAL);
+
+Texture2D OcclusionTexture BIND_GROUP(BG_MATERIAL);
+SamplerState OcclusionTexture_AutoSampler BIND_GROUP(BG_MATERIAL);
+
+Texture2D MetallicTexture BIND_GROUP(BG_MATERIAL);
+SamplerState MetallicTexture_AutoSampler BIND_GROUP(BG_MATERIAL);
+
+Texture2D SpecularTexture BIND_GROUP(BG_MATERIAL);
+SamplerState SpecularTexture_AutoSampler BIND_GROUP(BG_MATERIAL);
+
+Texture2D GlossTexture BIND_GROUP(BG_MATERIAL);
+SamplerState GlossTexture_AutoSampler BIND_GROUP(BG_MATERIAL);
+
+Texture2D TranslucencyTexture BIND_GROUP(BG_MATERIAL);
+SamplerState TranslucencyTexture_AutoSampler BIND_GROUP(BG_MATERIAL);
+
+float2 GetTexCoord()
+{
+  float2 tc = G.Input.TexCoord0.xy;
+
+  #if !MATERIAL_PREVIEW
+
+  // unfortunately we have to DIVIDE in the pixel shader with the original value
+  // if we use the inverse of TexCoords.z and interpolate that in the vertex-shader
+  // the result has a slightly different value in the pixel shader,
+  // resulting in drastically reduced quality
+  tc = tc / G.Input.TexCoord1.x;
+
+  #endif
+
+  tc.y = 1.0 - tc.y;
+
+  return tc;
+}
+
+float3 GetBaseColor()
+{
+  #if MATERIAL_PREVIEW
+
+    return BaseTexture.Sample(BaseTexture_AutoSampler, GetTexCoord()).rgb;
+
+  #else
+
+    float3 variationColor = GetMaterialData(VariationColor).rgb;
+    float variationStrength = GetMaterialData(VariationColor).a;
+    float vertexStrength = G.Input.Color0.a;
+
+    float3 texColor = BaseTexture.Sample(BaseTexture_AutoSampler, GetTexCoord()).rgb;
+    float3 finalColor = lerp(texColor, variationColor, vertexStrength * variationStrength);
+
+    return finalColor;
+
+  #endif
+}
+
+float3 GetNormal()
+{
+  float3 wsNormal;
+
+  [branch]
+  if (GetMaterialData(UseNormalTexture))
+  {
+    float3 normalTS = DecodeNormalTexture(NormalTexture.Sample(NormalTexture_AutoSampler, GetTexCoord()));
+
+    // TODO: validate / preprocess: since we flip sampling the textures, the normal is also pointing in the other direction
+    normalTS.y = -normalTS.y;
+
+    wsNormal = TangentToWorldSpace(normalTS);
+  }
+  else
+  {
+    wsNormal = G.Input.Normal;
+  }
+
+  #if !MATERIAL_PREVIEW
+
+    [branch]
+    if (GetMaterialData(KrautTreeMode) == 2) // Leaf
+    {
+      wsNormal += normalize(G.Input.LeafNormal);
+    }
+
+  #endif
+
+  return normalize(wsNormal);
+}
+
+float GetMetallic()
+{
+#if SHADING_WORKFLOW == SHADING_WORKFLOW_SPECULAR_GLOSS
+  // Specular-gloss workflow doesn't use metallic
+  return 0.0f;
+#else
+  [branch]
+  if (GetMaterialData(UseMetallicTexture))
+  {
+    return GetMaterialData(MetallicValue) * MetallicTexture.Sample(MetallicTexture_AutoSampler, GetTexCoord()).r;
+  }
+  else
+  {
+    return GetMaterialData(MetallicValue);
+  }
+#endif
+}
+
+float GetReflectance()
+{
+  return 0.2f;
+}
+
+float GetRoughness()
+{
+#if SHADING_WORKFLOW == SHADING_WORKFLOW_SPECULAR_GLOSS
+  // Specular-gloss workflow: convert gloss to roughness
+  float gloss = 0.0f;
+  [branch]
+  if (GetMaterialData(UseGlossTexture))
+  {
+    gloss = GetMaterialData(GlossValue) * GlossTexture.Sample(GlossTexture_AutoSampler, GetTexCoord()).r;
+  }
+  else
+  {
+    gloss = GetMaterialData(GlossValue);
+  }
+  return 1.0 - saturate(gloss);
+#else
+  [branch]
+  if (GetMaterialData(UseRoughnessTexture))
+  {
+    return GetMaterialData(RoughnessValue) * RoughnessTexture.Sample(RoughnessTexture_AutoSampler, GetTexCoord()).r;
+  }
+  else
+  {
+    return GetMaterialData(RoughnessValue);
+  }
+#endif
+}
+
+float3 GetDiffuseColor()
+{
+#if SHADING_WORKFLOW == SHADING_WORKFLOW_SPECULAR_GLOSS
+  // Specular-gloss workflow: diffuse color is base color directly
+  return GetBaseColor();
+#else
+  [branch]
+  if (GetMaterialData(UseSpecularTexture))
+  {
+    return GetBaseColor();
+  }
+  else
+  {
+    return lerp(GetBaseColor(), 0.0f, GetMetallic());
+  }
+#endif
+}
+
+float3 GetSpecularColor()
+{
+#if SHADING_WORKFLOW == SHADING_WORKFLOW_SPECULAR_GLOSS
+  // Specular-gloss workflow: use specular color/texture directly
+  [branch]
+  if (GetMaterialData(UseSpecularTexture))
+  {
+    return GetMaterialData(SpecularColor).rgb * SpecularTexture.Sample(SpecularTexture_AutoSampler, GetTexCoord()).rgb;
+  }
+  else
+  {
+    return GetMaterialData(SpecularColor).rgb;
+  }
+#else
+  [branch]
+  if (GetMaterialData(UseSpecularTexture))
+  {
+    return SpecularTexture.Sample(SpecularTexture_AutoSampler, GetTexCoord()).rgb;
+  }
+  else
+  {
+    return lerp(GetMaterialData(SpecularColor).rgb, GetBaseColor(), GetMetallic());
+  }
+#endif
+}
+
+float GetOpacity()
+{
+  float opacity = BaseTexture.Sample(BaseTexture_AutoSampler, GetTexCoord()).a;
+
+  #if BLEND_MODE == BLEND_MODE_MASKED
+    return opacity - GetMaterialData(MaskThreshold);
+  #else
+    return opacity;
+  #endif
+}
+
+float GetOcclusion()
+{
+  float fBaseOcclusion = 1.0;
+
+  #if !MATERIAL_PREVIEW
+
+    return fBaseOcclusion = G.Input.TexCoord1.y;
+
+  #endif
+
+
+  [branch]
+  if (GetMaterialData(UseOcclusionTexture))
+  {
+    return OcclusionTexture.Sample(OcclusionTexture_AutoSampler, G.Input.TexCoord0.xy).r * fBaseOcclusion;
+  }
+  else
+  {
+    return fBaseOcclusion;
+  }
+}
+
+float3 GetSubsurfaceColor()
+{
+  // CryEngine-style vegetation translucency:
+  // The subsurface color defines the tint of transmitted light
+  // The translucency texture defines WHERE transmission occurs (thickness map)
+  //   - White/bright = thin areas (leaf edges, translucent petals) = more transmission
+  //   - Black/dark = thick areas (stems, bark, veins) = less transmission
+  // TranslucencyStrength is an overall intensity multiplier
+
+  float3 subsurfaceColor = GetMaterialData(SubsurfaceColor).rgb;
+  float transmissionMask = GetMaterialData(TranslucencyStrength);
+
+  [branch]
+  if (GetMaterialData(UseTranslucencyTexture))
+  {
+    // Sample translucency/thickness map (R channel)
+    // This acts as a per-pixel transmission mask
+    transmissionMask *= TranslucencyTexture.Sample(TranslucencyTexture_AutoSampler, GetTexCoord()).r;
+  }
+
+  // Modulate subsurface color by transmission mask
+  // This feeds into the MATERIAL_FOLIAGE subsurface shading path
+  // which calculates back-lighting based on view vs light direction
+  return subsurfaceColor * transmissionMask;
+}
+
+void GetSubsurfaceParams(out float scatterPower, out float shadowFalloff)
+{
+  scatterPower = GetMaterialData(SubsurfaceScatterPower);
+  shadowFalloff = GetMaterialData(SubsurfaceShadowFalloff);
+}
