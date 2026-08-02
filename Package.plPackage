@@ -13,7 +13,7 @@ PackageInfo
 	// Id is immutable and globally unique. Version is immutable once published;
 	// a mistake is fixed by publishing 1.2.1, never by replacing 1.2.0.
 	string %Id{"plasma.kraut"}
-	string %Version{"1.2.1"}
+	string %Version{"1.2.2"}
 	// Must match a Publishers row in the catalogue exactly - it is resolved by name.
 	string %Publisher{"PlasmaTechnology"}
 	string %License{"MIT"}

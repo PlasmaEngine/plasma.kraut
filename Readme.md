@@ -35,23 +35,19 @@ break every material here and in any project already referencing them.
 
 ## Building
 
-**This repository cannot be built standalone yet.**
+Requires an engine SDK — a built engine checkout — named by `PLASMA_SDK_ROOT`:
 
-PlasmaBuild resolves every path from `context.ProjectRoot` and has no concept of an installed engine
-SDK: `AddPluginImport` links against `<ProjectRoot>/Binaries/<Platform>_<Config>`, which only exists
-inside the engine tree. Three things are needed before this builds on its own:
+```bash
+PLASMA_SDK_ROOT=/path/to/engine plasmabuild build EditorPluginKraut
+```
 
-1. An installed-SDK layout — engine headers, import libraries and the shared build rules, laid out
-   somewhere discoverable outside the engine repository.
-2. A way to point PlasmaBuild at a module directory outside `ProjectRoot`.
-3. An `AddPluginImport` equivalent that resolves against that SDK rather than `ProjectRoot`.
+Output lands in `Bin/Windows_x64_Development/`.
 
-Until then, building means copying `Source/` and `ThirdParty/` back into an engine checkout. The
-published `plasma.kraut@1.2.0` package was built that way; its binaries are already in the registry,
-so consuming the plugin does not require building it.
-
-The module and target files here have been repointed at this layout, so they are internally
-consistent and ready for whichever of the above lands first.
+`Configs/PlasmaPackageSdk.pb.cs` is what makes this work outside an engine checkout: it resolves
+engine headers and import libraries against the SDK rather than `context.ProjectRoot`, and restates
+the engine's feature defines. Those defines are the one thing to watch — they propagate through the
+module graph automatically inside the engine tree but not out here, so a mismatch changes the ABI
+silently. `Configs/PlasmaPackageQt.pb.cs` does the same for Qt code generation.
 
 ## Publishing a new version
 

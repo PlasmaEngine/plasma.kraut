@@ -65,7 +65,11 @@ public static class PlasmaPackageQt
         var generated = new List<string>();
         generated.AddRange(InvokeMoc(context, qtPath, sourceRoot, outputRoot));
         generated.AddRange(InvokeRcc(context, qtPath, moduleName, sourceRoot, outputRoot));
-        InvokeUic(context, qtPath, sourceRoot, outputRoot);
+
+        // uic output is the one kind the C++ names for itself, as <PluginDir/ui_Foo.h>, so it has to
+        // land under a directory named for the plugin rather than for the module. moc and rcc output
+        // is reached through the aggregate include by absolute path, so where it sits does not matter.
+        InvokeUic(context, qtPath, sourceRoot, Path.Combine(includeRoot, Path.GetFileName(sourceDirectory)));
 
         WriteAggregateInclude(outputRoot, generated);
 
@@ -131,13 +135,15 @@ public static class PlasmaPackageQt
         return results;
     }
 
-    private static void InvokeUic(BuildContext context, string qtPath, string sourceRoot, string outputRoot)
+    private static void InvokeUic(BuildContext context, string qtPath, string sourceRoot, string uicRoot)
     {
         var uic = Path.Combine(qtPath, "bin", "uic.exe");
 
+        Directory.CreateDirectory(uicRoot);
+
         foreach (var ui in Directory.EnumerateFiles(sourceRoot, "*.ui", SearchOption.AllDirectories))
         {
-            var output = Path.Combine(outputRoot, "ui_" + Path.GetFileNameWithoutExtension(ui) + ".h");
+            var output = Path.Combine(uicRoot, "ui_" + Path.GetFileNameWithoutExtension(ui) + ".h");
 
             if (NeedsUpdate(output, ui))
             {
