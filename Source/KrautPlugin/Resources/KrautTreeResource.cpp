@@ -200,7 +200,7 @@ void plKrautTreeResourceDescriptor::Save(plStreamWriter& inout_stream0) const
   uiCompressionMode = 1;
   plCompressedStreamWriterZstd stream(&inout_stream0, 0, plCompressedStreamWriterZstd::Compression::Average);
 #else
-  plStreamWriter& stream = stream0;
+  plStreamWriter& stream = inout_stream0;
 #endif
 
   inout_stream0 << uiCompressionMode;

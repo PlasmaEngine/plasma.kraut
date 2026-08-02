@@ -30,3 +30,7 @@ _blobs/
 *.user
 Thumbs.db
 .DS_Store
+
+# Regenerated at publish time by PackageInspector --write-checksums.
+# A committed copy goes stale the moment anything ships.
+Package.sha256

@@ -6,11 +6,14 @@ public class KrautPluginModule : ModuleRules
 {
     public KrautPluginModule(BuildContext context) : base(context)
     {
-        PlasmaBuildPluginModule.Configure(this, context, "Source/KrautPlugin", "KrautPluginPCH.h", "BUILDSYSTEM_BUILDING_KRAUTPLUGIN_LIB",
-            "GameEngineModule",
-            "UtilitiesModule",
-            "KrautModule");
+        PlasmaPackageSdk.ConfigurePackageModule(this, context, "Source/KrautPlugin", "KrautPluginPCH.h",
+            "BUILDSYSTEM_BUILDING_KRAUTPLUGIN_LIB");
 
-        PrivateIncludePaths.Add(Path.Combine(context.ProjectRoot, "Data/Base"));
+        // Kraut's own generator, which ships in this package rather than in the SDK.
+        PublicDependencies.Add("KrautModule");
+
+        // Resolves against the SDK, not the package. In-tree this read context.ProjectRoot, which
+        // now means the package directory and would silently find nothing.
+        PrivateIncludePaths.Add(Path.Combine(PlasmaPackageSdk.Root, "Data", "Base"));
     }
 }

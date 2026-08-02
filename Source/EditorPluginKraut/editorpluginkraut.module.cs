@@ -5,14 +5,22 @@ public class EditorPluginKrautModule : ModuleRules
 {
     public EditorPluginKrautModule(BuildContext context) : base(context)
     {
-        PlasmaBuildPluginModule.Configure(this, context, "Source/EditorPluginKraut", "EditorPluginKrautPCH.h", "BUILDSYSTEM_BUILDING_EDITORPLUGINKRAUT_LIB",
-            "EditorFrameworkModule",
-            "GameEngineModule",
-            "EditorPluginAssetsModule",
-            "KrautModule");
+        PlasmaPackageSdk.ConfigurePackageModule(this, context, "Source/EditorPluginKraut", "EditorPluginKrautPCH.h",
+            "BUILDSYSTEM_BUILDING_EDITORPLUGINKRAUT_LIB");
 
-        PlasmaBuildPluginModule.AddPluginImport(this, context, "Source/KrautPlugin", "plKrautPlugin");
-        PlasmaBuildPluginModule.AddPluginImport(this, context, "Source/EnginePluginKraut", "plEnginePluginKraut");
-        PlasmaBuildPluginModule.ConfigureQt(this, context, "EditorPluginKrautModule", "Source/EditorPluginKraut", "Intermediate/PlasmaBuild/Generated/Source/EditorPluginKraut", "Core", "Gui", "Widgets");
+        PlasmaPackageSdk.ConfigureEditorSdkConsumer(this, context);
+
+        // The asset-document framework this plugin's tree asset builds on.
+        PlasmaPackageSdk.AddImportLibrary(this, context, "plEditorPluginAssets");
+        PlasmaPackageSdk.AddImportLibrary(this, context, "plSharedPluginAssets");
+
+        PublicDependencies.Add("KrautModule");
+
+        // Siblings from this package.
+        PlasmaPackageSdk.AddPackagePluginImport(this, context, "Source/KrautPlugin", "plKrautPlugin");
+        PlasmaPackageSdk.AddPackagePluginImport(this, context, "Source/EnginePluginKraut", "plEnginePluginKraut");
+
+        PlasmaPackageQt.ConfigureQtModule(this, context, "EditorPluginKrautModule", "Source/EditorPluginKraut",
+            "Core", "Gui", "Widgets");
     }
 }

@@ -13,7 +13,7 @@ PackageInfo
 	// Id is immutable and globally unique. Version is immutable once published;
 	// a mistake is fixed by publishing 1.2.1, never by replacing 1.2.0.
 	string %Id{"plasma.kraut"}
-	string %Version{"1.2.0"}
+	string %Version{"1.2.1"}
 	// Must match a Publishers row in the catalogue exactly - it is resolved by name.
 	string %Publisher{"PlasmaTechnology"}
 	string %License{"MIT"}
@@ -28,12 +28,13 @@ PackageInfo
 	// against the running engine is a hard refusal, not a warning — these DLLs
 	// share allocators, RTTI and reflection with the host.
 	//
-	// The trailing hash is a PLACEHOLDER. The publishing step must replace it with
-	// the real identifier of the engine build the binaries were compiled against;
-	// a tag nobody computes is decorative, and worse than having none.
+	// The value must equal plSdkVersion::GetAbiTag() of the engine these binaries
+	// were compiled against - platform, compiler family, engine version and build
+	// configuration. The configuration is part of it: a Development build and a
+	// Shipping build do not share a binary interface.
 	string %MinEngineVersion{"0.7.0"}
 	string %MaxEngineVersion{"0.7.0"}
-	string %AbiTag{"win64-msvc-0.7.0-PLACEHOLDER"}
+	string %AbiTag{"win64-msvc19-0.7.0-dev"}
 
 	// ---- presentation ---------------------------------------------------------
 	// Icon and Banner resolve relative to THIS package's root, not to the shared
