@@ -343,7 +343,7 @@ plStatus plKrautTreeAssetDocumentGenerator::Generate(plStringView sInputFileAbs,
     return plStatus(PL_SUCCESS);
   }
 
-  auto pApp = plQtEditorApp::GetSingleton();
+  auto pApp = plEditorApp::GetSingleton();
 
   plStringBuilder sInputFileRel = sInputFileAbs;
   pApp->MakePathDataDirectoryRelative(sInputFileRel);
