@@ -14,12 +14,13 @@ Kraut.plPluginBundle     legacy descriptor, kept until the engine reads manifest
 Source/
   KrautPlugin/           runtime  -> plKrautPlugin
   EnginePluginKraut/     editor engine process -> plEnginePluginKraut
-  EditorPluginKraut/     editor   -> plEditorPluginKraut  (Qt: asset window, drag&drop, actions)
+  EditorPluginKraut/     editor   -> plEditorPluginKraut  (asset window, drag&drop, actions)
 ThirdParty/
   Kraut/                 KrautFoundation + KrautGenerator, statically linked into plKrautPlugin
 Assets/
   Kraut/                 materials and the Kraut shader
 Branding/                icon and banner
+EditorIcons/             editor icons, by icon id (":/AssetIcons/Kraut_Tree.svg" is AssetIcons/Kraut_Tree.svg)
 Localization/en/         editor string tables
 ```
 
@@ -47,7 +48,7 @@ Output lands in `Bin/Windows_x64_Development/`.
 engine headers and import libraries against the SDK rather than `context.ProjectRoot`, and restates
 the engine's feature defines. Those defines are the one thing to watch — they propagate through the
 module graph automatically inside the engine tree but not out here, so a mismatch changes the ABI
-silently. `Configs/PlasmaPackageQt.pb.cs` does the same for Qt code generation.
+silently.
 
 ## Publishing a new version
 
