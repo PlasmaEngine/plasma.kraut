@@ -1,7 +1,7 @@
 #include <EditorPluginKraut/EditorPluginKrautPCH.h>
 
 #include <EditorPluginKraut/KrautTreeAsset/KrautTreeAssetManager.h>
-#include <EditorPluginKraut/KrautTreeAsset/KrautTreeAssetWindow.moc.h>
+#include <EditorPluginKraut/KrautTreeAsset/KrautTreeAssetWindow.h>
 
 PL_BEGIN_DYNAMIC_REFLECTED_TYPE(plKrautTreeAssetDocumentManager, 1, plRTTIDefaultAllocator<plKrautTreeAssetDocumentManager>)
 PL_END_DYNAMIC_REFLECTED_TYPE;
@@ -35,7 +35,7 @@ void plKrautTreeAssetDocumentManager::OnDocumentManagerEvent(const plDocumentMan
     {
       if (e.m_pDocument->GetDynamicRTTI() == plGetStaticRTTI<plKrautTreeAssetDocument>())
       {
-        new plQtKrautTreeAssetDocumentWindow(static_cast<plKrautTreeAssetDocument*>(e.m_pDocument)); // NOLINT: Not a memory leak
+        new plKrautTreeAssetDocumentWindow(static_cast<plKrautTreeAssetDocument*>(e.m_pDocument)); // NOLINT: Not a memory leak
       }
     }
     break;

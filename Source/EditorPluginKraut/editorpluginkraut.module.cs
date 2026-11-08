@@ -14,13 +14,13 @@ public class EditorPluginKrautModule : ModuleRules
         PlasmaPackageSdk.AddImportLibrary(this, context, "plEditorPluginAssets");
         PlasmaPackageSdk.AddImportLibrary(this, context, "plSharedPluginAssets");
 
+        // The side panel's pages in the engine shell are editor UI contents.
+        PlasmaPackageSdk.AddImportLibrary(this, context, "plEditorUi");
+
         PublicDependencies.Add("KrautModule");
 
         // Siblings from this package.
         PlasmaPackageSdk.AddPackagePluginImport(this, context, "Source/KrautPlugin", "plKrautPlugin");
         PlasmaPackageSdk.AddPackagePluginImport(this, context, "Source/EnginePluginKraut", "plEnginePluginKraut");
-
-        PlasmaPackageQt.ConfigureQtModule(this, context, "EditorPluginKrautModule", "Source/EditorPluginKraut",
-            "Core", "Gui", "Widgets");
     }
 }

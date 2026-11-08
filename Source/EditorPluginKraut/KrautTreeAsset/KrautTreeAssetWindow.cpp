@@ -1,36 +1,22 @@
 #include <EditorPluginKraut/EditorPluginKrautPCH.h>
 
 #include <EditorFramework/Assets/AssetCurator.h>
-#include <EditorFramework/Assets/AssetStatusIndicator.moc.h>
-#include <EditorFramework/DocumentWindow/OrbitCamViewWidget.moc.h>
+#include <EditorFramework/DocumentWindow/OrbitCamViewWidget.h>
 #include <EditorFramework/InputContexts/OrbitCameraContext.h>
-#include <EditorPluginKraut/KrautTreeAsset/KrautTreeAssetWindow.moc.h>
+#include <EditorPluginKraut/KrautTreeAsset/KrautTreeAssetWindow.h>
+#include <EditorPluginKraut/KrautTreeAsset/KrautTreeShellPanels.h>
+#include <EditorUi/Platform/EditorPlatform.h>
 #include <Foundation/IO/MemoryStream.h>
 #include <Foundation/IO/OSFile.h>
 #include <Foundation/Serialization/AbstractObjectGraph.h>
 #include <Foundation/Serialization/DdlSerializer.h>
 #include <Foundation/Utilities/AssetFileHeader.h>
-#include <GuiFoundation/ActionViews/MenuBarActionMapView.moc.h>
-#include <GuiFoundation/ActionViews/ToolBarActionMapView.moc.h>
-#include <GuiFoundation/DockPanels/DocumentPanel.moc.h>
-#include <GuiFoundation/PropertyGrid/PropertyGridWidget.moc.h>
+#include <GuiFoundation/Dialogs/FileDialog.h>
+#include <GuiFoundation/EngineUi/EngineUiControlStrip.h>
+#include <GuiFoundation/PropertyGrid/EnginePropertyGridWidget.h>
 #include <KrautGenerator/Description/LodDesc.h>
 #include <KrautGenerator/Description/TreeStructureDesc.h>
 #include <KrautGenerator/Serialization/SerializeTree.h>
-#include <QApplication>
-#include <QBoxLayout>
-#include <QCheckBox>
-#include <QClipboard>
-#include <QComboBox>
-#include <QFileDialog>
-#include <QHBoxLayout>
-#include <QLabel>
-#include <QLayout>
-#include <QMenu>
-#include <QMessageBox>
-#include <QMimeData>
-#include <QPushButton>
-#include <QToolButton>
 #include <ToolsFoundation/Command/TreeCommands.h>
 #include <ToolsFoundation/Object/ObjectCommandAccessor.h>
 #include <ToolsFoundation/Serialization/DocumentObjectConverter.h>
@@ -85,223 +71,120 @@ namespace
   };
 } // namespace
 
-plQtKrautTreeAssetDocumentWindow::plQtKrautTreeAssetDocumentWindow(plAssetDocument* pDocument)
-  : plQtEngineDocumentWindow(pDocument)
+plKrautTreeAssetDocumentWindow::plKrautTreeAssetDocumentWindow(plAssetDocument* pDocument)
+  : plEngineDocumentWindow(pDocument)
 {
-  // Menu Bar
-  {
-    plQtMenuBarActionMapView* pMenuBar = static_cast<plQtMenuBarActionMapView*>(menuBar());
-    plActionContext context;
-    context.m_sMapping = "KrautTreeAssetMenuBar";
-    context.m_pDocument = pDocument;
-    context.m_pWindow = this;
-    pMenuBar->SetActionContext(context);
-  }
-
-  // Tool Bar
-  {
-    plQtToolBarActionMapView* pToolBar = new plQtToolBarActionMapView("Toolbar", this);
-    plActionContext context;
-    context.m_sMapping = "KrautTreeAssetToolBar";
-    context.m_pDocument = pDocument;
-    context.m_pWindow = this;
-    pToolBar->SetActionContext(context);
-    pToolBar->setObjectName("KrautTreeAssetWindowToolBar");
-    addToolBar(pToolBar);
-  }
+  SetMenuBarActions("KrautTreeAssetMenuBar");
+  SetToolBarActions("KrautTreeAssetToolBar");
 
   // 3D View
-  plQtViewWidgetContainer* pContainer = nullptr;
   {
     SetTargetFramerate(25);
 
     m_ViewConfig.m_Camera.LookAt(plVec3(-1.6f, 0, 0), plVec3(0, 0, 0), plVec3(0, 0, 1));
     m_ViewConfig.ApplyPerspectiveSetting(90);
 
-    m_pViewWidget = new plQtOrbitCamViewWidget(this, &m_ViewConfig);
+    m_pViewWidget = new plOrbitCamViewWidget(this, &m_ViewConfig);
     m_pViewWidget->ConfigureRelative(plVec3(0, 0, 2), plVec3(10.0f), plVec3(5, -2, 3), 2.0f);
     AddViewWidget(m_pViewWidget);
-    pContainer = new plQtViewWidgetContainer(this, m_pViewWidget, "MeshAssetViewToolBar");
-    m_pDockManager->setCentralWidget(pContainer);
+    m_pViewWidget->SetToolBarActions("MeshAssetViewToolBar");
   }
 
+  CreatePages();
 
-  // Property Grid
-  {
-    plDocumentObject* pRootObject = pDocument->GetObjectManager()->GetRootObject()->GetChildren()[0];
+  // the shell's properties panel follows the selection
+  pDocument->GetSelectionManager()->SetSelection(pDocument->GetObjectManager()->GetRootObject()->GetChildren()[0]);
 
-    plDeque<const plDocumentObject*> sel;
-    sel.PushBack(pRootObject);
-
-    plQtDocumentPanel* pPropertyPanel = new plQtDocumentPanel(this, pDocument);
-    pPropertyPanel->setObjectName("KrautTreeAssetDockWidget");
-    pPropertyPanel->setWindowTitle("Kraut Tree Properties");
-    pPropertyPanel->show();
-
-    QTabWidget* pTabWidget = new QTabWidget(pPropertyPanel);
-
-    QWidget* pAssetTab = new QWidget(pTabWidget);
-    pAssetTab->setLayout(new QVBoxLayout);
-    pAssetTab->layout()->setContentsMargins(0, 0, 0, 0);
-
-    QPushButton* pImportKrautButton = new QPushButton("Import Kraut File", pAssetTab);
-    pAssetTab->layout()->addWidget(pImportKrautButton);
-
-    plQtPropertyGridWidget* pAssetProps = new plQtPropertyGridWidget(pAssetTab, pDocument, false);
-    pAssetProps->SetSelectionIncludeExcludeProperties(nullptr, "Materials;BT_Trunk1;BT_Trunk2;BT_Trunk3;BT_MainBranch1;BT_MainBranch2;BT_MainBranch3;BT_SubBranch1;BT_SubBranch2;BT_SubBranch3;BT_Twig1;BT_Twig2;BT_Twig3;LOD0;LOD1;LOD2;LOD3;LOD4");
-    pAssetProps->SetSelection(sel);
-    pAssetTab->layout()->addWidget(pAssetProps);
-
-    pTabWidget->addTab(pAssetTab, "Asset");
-
-    // plQtPropertyGridWidget* pMaterialProps = new plQtPropertyGridWidget(pTabWidget, pDocument, false);
-    // pMaterialProps->SetSelectionIncludeExcludeProperties("Materials");
-    // pMaterialProps->SetSelection(sel);
-    // pTabWidget->addTab(pMaterialProps, "Materials");
-
-    // Branch Type Tab with combo box
-    QWidget* pBranchTypeTab = new QWidget(pTabWidget);
-    pBranchTypeTab->setLayout(new QVBoxLayout);
-    pBranchTypeTab->layout()->setContentsMargins(0, 0, 0, 0);
-
-    QComboBox* pBranchTypeCombo = new QComboBox(pBranchTypeTab);
-    pBranchTypeTab->layout()->addWidget(new QLabel("Branch Type to Edit:"));
-    pBranchTypeTab->layout()->addWidget(pBranchTypeCombo);
-
-    {
-      QWidget* pCopyPasteRow = new QWidget(pBranchTypeTab);
-      auto* pRowLayout = new QHBoxLayout(pCopyPasteRow);
-      pRowLayout->setContentsMargins(0, 0, 0, 0);
-      QPushButton* pCopyButton = new QPushButton("Copy", pCopyPasteRow);
-      QPushButton* pPasteButton = new QPushButton("Paste", pCopyPasteRow);
-      pRowLayout->addWidget(pCopyButton);
-      pRowLayout->addWidget(pPasteButton);
-      pBranchTypeTab->layout()->addWidget(pCopyPasteRow);
-      connect(pCopyButton, SIGNAL(clicked()), this, SLOT(onCopyBranchType()));
-      connect(pPasteButton, SIGNAL(clicked()), this, SLOT(onPasteBranchType()));
-    }
-
-    m_pBranchProps = new plQtPropertyGridWidget(pBranchTypeTab, pDocument, false);
-    // m_pBranchProps->SetSelectionIncludeExcludeProperties("BT_Trunk1;BT_MainBranch1;BT_MainBranch2");
-    // m_pBranchProps->SetSelection(sel);
-    pBranchTypeTab->layout()->addWidget(m_pBranchProps);
-
-    pTabWidget->addTab(pBranchTypeTab, "Branch Type");
-
-    // LOD Tab with combo box
-    QWidget* pLodTab = new QWidget(pTabWidget);
-    pLodTab->setLayout(new QVBoxLayout);
-    pLodTab->layout()->setContentsMargins(0, 0, 0, 0);
-
-    QCheckBox* pAutoLodCheckbox = new QCheckBox("Automatic LOD (by distance)", pLodTab);
-    pAutoLodCheckbox->setToolTip("When checked, the engine selects the LOD to render based on camera distance.\nWhen unchecked, the LOD selected below is always used for rendering.");
-    pAutoLodCheckbox->setChecked(false);
-    pLodTab->layout()->addWidget(pAutoLodCheckbox);
-
-    QComboBox* pLodCombo = new QComboBox(pLodTab);
-    QPushButton* pAddLodButton = new QPushButton("+", pLodTab);
-    pAddLodButton->setToolTip("Add a new LOD");
-    pAddLodButton->setFixedWidth(28);
-    QPushButton* pDeleteLodButton = new QPushButton("-", pLodTab);
-    pDeleteLodButton->setToolTip("Remove the last LOD");
-    pDeleteLodButton->setFixedWidth(28);
-    pLodTab->layout()->addWidget(new QLabel("LOD Level to Edit:"));
-    {
-      QWidget* pLodRow = new QWidget(pLodTab);
-      auto* pLodRowLayout = new QHBoxLayout(pLodRow);
-      pLodRowLayout->setContentsMargins(0, 0, 0, 0);
-      pLodRowLayout->addWidget(pLodCombo, 1);
-      pLodRowLayout->addWidget(pAddLodButton);
-      pLodRowLayout->addWidget(pDeleteLodButton);
-      pLodTab->layout()->addWidget(pLodRow);
-    }
-
-    QToolButton* pPresetButton = new QToolButton(pLodTab);
-    pPresetButton->setText("Apply Preset");
-    pPresetButton->setPopupMode(QToolButton::InstantPopup);
-    {
-      QMenu* pPresetMenu = new QMenu(pPresetButton);
-      for (int i = 0; i < (int)PL_ARRAY_SIZE(s_LodPresets); ++i)
-      {
-        if (i == (int)PL_ARRAY_SIZE(s_LodPresets) - 1)
-          pPresetMenu->addSeparator();
-        QAction* pAction = pPresetMenu->addAction(s_LodPresets[i].szName);
-        connect(pAction, &QAction::triggered, this, [this, i]()
-          { ApplyLodPreset(i); });
-      }
-      pPresetButton->setMenu(pPresetMenu);
-    }
-    pLodTab->layout()->addWidget(pPresetButton);
-
-    {
-      QWidget* pCopyPasteRow = new QWidget(pLodTab);
-      auto* pRowLayout = new QHBoxLayout(pCopyPasteRow);
-      pRowLayout->setContentsMargins(0, 0, 0, 0);
-      QPushButton* pCopyLodButton = new QPushButton("Copy", pCopyPasteRow);
-      QPushButton* pPasteLodButton = new QPushButton("Paste", pCopyPasteRow);
-      pRowLayout->addWidget(pCopyLodButton);
-      pRowLayout->addWidget(pPasteLodButton);
-      pLodTab->layout()->addWidget(pCopyPasteRow);
-      connect(pCopyLodButton, SIGNAL(clicked()), this, SLOT(onCopyLod()));
-      connect(pPasteLodButton, SIGNAL(clicked()), this, SLOT(onPasteLod()));
-    }
-
-    m_pLodProps = new plQtPropertyGridWidget(pLodTab, pDocument, false);
-    pLodTab->layout()->addWidget(m_pLodProps);
-
-    pTabWidget->addTab(pLodTab, "LOD");
-
-    QWidget* pWidget = new QWidget();
-    pWidget->setObjectName("Group");
-    pWidget->setLayout(new QVBoxLayout());
-    pWidget->setContentsMargins(0, 0, 0, 0);
-
-    pWidget->layout()->setContentsMargins(0, 0, 0, 0);
-    pWidget->layout()->addWidget(new plQtAssetStatusIndicator(GetDocument()));
-    pWidget->layout()->addWidget(pTabWidget);
-
-    pPropertyPanel->setWidget(pWidget, ads::CDockWidget::ForceNoScrollArea);
-
-    m_pDockManager->addDockWidgetTab(ads::RightDockWidgetArea, pPropertyPanel);
-
-    pDocument->GetSelectionManager()->SetSelection(pDocument->GetObjectManager()->GetRootObject()->GetChildren()[0]);
-
-    connect(pImportKrautButton, SIGNAL(clicked()), this, SLOT(onImportKrautFile()));
-
-    {
-      m_pBranchTypeCombo = pBranchTypeCombo;
-      connect(pBranchTypeCombo, SIGNAL(currentIndexChanged(int)), this, SLOT(onBranchTypeSelected(int)));
-      RebuildBranchTypeCombo();
-    }
-
-    {
-      m_pLodCombo = pLodCombo;
-      m_pAddLodButton = pAddLodButton;
-      m_pDeleteLodButton = pDeleteLodButton;
-      m_pAutoLodCheckbox = pAutoLodCheckbox;
-      connect(pLodCombo, SIGNAL(currentIndexChanged(int)), this, SLOT(onLodSelected(int)));
-      connect(pAddLodButton, SIGNAL(clicked()), this, SLOT(onAddLod()));
-      connect(pDeleteLodButton, SIGNAL(clicked()), this, SLOT(onDeleteLod()));
-      connect(pAutoLodCheckbox, SIGNAL(toggled(bool)), this, SLOT(onAutoLodToggled(bool)));
-      RebuildLodCombo();
-    }
-  }
+  RebuildBranchTypeCombo();
+  RebuildLodCombo();
 
   m_pAssetDoc = static_cast<plKrautTreeAssetDocument*>(pDocument);
 
-  FinishWindowCreation();
-
-  GetDocument()->GetObjectManager()->m_PropertyEvents.AddEventHandler(plMakeDelegate(&plQtKrautTreeAssetDocumentWindow::PropertyEventHandler, this));
+  GetDocument()->GetObjectManager()->m_PropertyEvents.AddEventHandler(plMakeDelegate(&plKrautTreeAssetDocumentWindow::PropertyEventHandler, this));
 }
 
-plQtKrautTreeAssetDocumentWindow::~plQtKrautTreeAssetDocumentWindow()
+plKrautTreeAssetDocumentWindow::~plKrautTreeAssetDocumentWindow()
 {
-  GetDocument()->GetObjectManager()->m_PropertyEvents.RemoveEventHandler(plMakeDelegate(&plQtKrautTreeAssetDocumentWindow::PropertyEventHandler, this));
+  // the pages report to this window
+  DestroyPanels();
+
+  GetDocument()->GetObjectManager()->m_PropertyEvents.RemoveEventHandler(plMakeDelegate(&plKrautTreeAssetDocumentWindow::PropertyEventHandler, this));
 
   RestoreResource();
 }
 
-void plQtKrautTreeAssetDocumentWindow::SendRedrawMsg()
+void plKrautTreeAssetDocumentWindow::CreatePages()
+{
+  CreateAssetPage();
+  CreateBranchTypePage();
+  CreateLodPage();
+}
+
+void plKrautTreeAssetDocumentWindow::CreateAssetPage()
+{
+  auto* pPage = AddPanel<plEditorUiKrautTreePage>({plKrautTreeShellPanels::s_szAssetPageId, "Asset", plEditorUiDockRole::Right}, GetDocument(), this);
+
+  m_pAssetControls = &pPage->GetStrip();
+  m_uiImportButton = m_pAssetControls->AddButton("Import Kraut File");
+  m_pAssetControls->m_OnChanged = plMakeDelegate(&plKrautTreeAssetDocumentWindow::OnAssetControl, this);
+
+  plDeque<const plDocumentObject*> sel;
+  sel.PushBack(GetDocument()->GetObjectManager()->GetRootObject()->GetChildren()[0]);
+
+  plEditorUiPropertyGrid& assetProps = pPage->GetGrid();
+  assetProps.SetIncludeExclude({}, "Materials;BT_Trunk1;BT_Trunk2;BT_Trunk3;BT_MainBranch1;BT_MainBranch2;BT_MainBranch3;BT_SubBranch1;BT_SubBranch2;BT_SubBranch3;BT_Twig1;BT_Twig2;BT_Twig3;LOD0;LOD1;LOD2;LOD3;LOD4");
+  assetProps.SetSelection(sel);
+}
+
+void plKrautTreeAssetDocumentWindow::CreateBranchTypePage()
+{
+  auto* pPage = AddPanel<plEditorUiKrautTreePage>({plKrautTreeShellPanels::s_szBranchTypePageId, "Branch Type", plEditorUiDockRole::Right}, GetDocument(), this);
+
+  m_pBranchControls = &pPage->GetStrip();
+  m_pBranchControls->AddLabel("Branch Type to Edit:");
+  m_pBranchControls->NextRow();
+  m_uiBranchTypeCombo = m_pBranchControls->AddDropdown({}, 0);
+  m_pBranchControls->NextRow();
+  m_uiCopyBranchButton = m_pBranchControls->AddButton("Copy");
+  m_uiPasteBranchButton = m_pBranchControls->AddButton("Paste");
+  m_pBranchControls->m_OnChanged = plMakeDelegate(&plKrautTreeAssetDocumentWindow::OnBranchControl, this);
+
+  m_pBranchProps = &pPage->GetGrid();
+}
+
+void plKrautTreeAssetDocumentWindow::CreateLodPage()
+{
+  auto* pPage = AddPanel<plEditorUiKrautTreePage>({plKrautTreeShellPanels::s_szLodPageId, "LOD", plEditorUiDockRole::Right}, GetDocument(), this);
+
+  // The preset menu lists the presets, the last one after a separator.
+  plHybridArray<plString, 8> presets;
+  for (int i = 0; i < (int)PL_ARRAY_SIZE(s_LodPresets); ++i)
+  {
+    if (i == (int)PL_ARRAY_SIZE(s_LodPresets) - 1)
+      presets.PushBack(plString());
+    presets.PushBack(s_LodPresets[i].szName);
+  }
+
+  m_pLodControls = &pPage->GetStrip();
+  m_uiAutoLodCheckbox = m_pLodControls->AddCheckBox("Automatic LOD (by distance)", false,
+    "When checked, the engine selects the LOD to render based on camera distance.\nWhen unchecked, the LOD selected below is always used for rendering.");
+  m_pLodControls->NextRow();
+  m_pLodControls->AddLabel("LOD Level to Edit:");
+  m_pLodControls->NextRow();
+  m_uiLodCombo = m_pLodControls->AddDropdown({}, 0);
+  m_uiAddLodButton = m_pLodControls->AddButton("+", "Add a new LOD", 28);
+  m_uiDeleteLodButton = m_pLodControls->AddButton("-", "Remove the last LOD", 28);
+  m_pLodControls->NextRow();
+  m_uiPresetButton = m_pLodControls->AddMenuButton("Apply Preset", presets);
+  m_pLodControls->NextRow();
+  m_uiCopyLodButton = m_pLodControls->AddButton("Copy");
+  m_uiPasteLodButton = m_pLodControls->AddButton("Paste");
+  m_pLodControls->m_OnChanged = plMakeDelegate(&plKrautTreeAssetDocumentWindow::OnLodControl, this);
+
+  m_pLodProps = &pPage->GetGrid();
+}
+
+void plKrautTreeAssetDocumentWindow::SendRedrawMsg()
 {
   // do not try to redraw while the process is crashed, it is obviously futile
   if (plEditorEngineProcessConnection::GetSingleton()->IsProcessCrashed())
@@ -317,7 +200,7 @@ void plQtKrautTreeAssetDocumentWindow::SendRedrawMsg()
   QueryObjectBBox();
 }
 
-void plQtKrautTreeAssetDocumentWindow::QueryObjectBBox(plInt32 iPurpose /*= 0*/)
+void plKrautTreeAssetDocumentWindow::QueryObjectBBox(plInt32 iPurpose /*= 0*/)
 {
   plQuerySelectionBBoxMsgToEngine msg;
   msg.m_uiViewID = 0xFFFFFFFF;
@@ -325,7 +208,7 @@ void plQtKrautTreeAssetDocumentWindow::QueryObjectBBox(plInt32 iPurpose /*= 0*/)
   GetDocument()->SendMessageToEngine(&msg);
 }
 
-void plQtKrautTreeAssetDocumentWindow::RestoreResource()
+void plKrautTreeAssetDocumentWindow::RestoreResource()
 {
   plRestoreResourceMsgToEngine msg;
   msg.m_sResourceType = "Kraut Tree";
@@ -336,21 +219,56 @@ void plQtKrautTreeAssetDocumentWindow::RestoreResource()
   plEditorEngineProcessConnection::GetSingleton()->SendMessage(&msg);
 }
 
-void plQtKrautTreeAssetDocumentWindow::onImportKrautFile()
+// The side panel's controls report here.
+
+void plKrautTreeAssetDocumentWindow::OnAssetControl(plUInt32 uiControl, plInt32 iValue)
 {
-  ImportKrautFile();
+  if (uiControl == m_uiImportButton)
+    ImportKrautFile();
 }
 
-void plQtKrautTreeAssetDocumentWindow::ImportKrautFile()
+void plKrautTreeAssetDocumentWindow::OnBranchControl(plUInt32 uiControl, plInt32 iValue)
 {
-  const QString sSelectedFile = QFileDialog::getOpenFileName(this, "Import Kraut Tree File", "", "Kraut Tree (*.tree)", nullptr, QFileDialog::Option::DontResolveSymlinks);
-  if (sSelectedFile.isEmpty())
+  if (uiControl == m_uiBranchTypeCombo)
+    OnBranchTypeSelected(iValue);
+  else if (uiControl == m_uiCopyBranchButton)
+    OnCopyBranchType();
+  else if (uiControl == m_uiPasteBranchButton)
+    OnPasteBranchType();
+}
+
+void plKrautTreeAssetDocumentWindow::OnLodControl(plUInt32 uiControl, plInt32 iValue)
+{
+  if (uiControl == m_uiAutoLodCheckbox)
+    OnAutoLodToggled(iValue != 0);
+  else if (uiControl == m_uiLodCombo)
+    OnLodSelected(iValue);
+  else if (uiControl == m_uiAddLodButton)
+    OnAddLod();
+  else if (uiControl == m_uiDeleteLodButton)
+    OnDeleteLod();
+  else if (uiControl == m_uiCopyLodButton)
+    OnCopyLod();
+  else if (uiControl == m_uiPasteLodButton)
+    OnPasteLod();
+  else if (uiControl == m_uiPresetButton)
+  {
+    // Choice indices count the separator before the last preset.
+    const int iPreset = iValue < (int)PL_ARRAY_SIZE(s_LodPresets) - 1 ? iValue : iValue - 1;
+    ApplyLodPreset(iPreset);
+  }
+}
+
+void plKrautTreeAssetDocumentWindow::ImportKrautFile()
+{
+  const plString sSelectedFile = plFileDialog::GetOpenFileName("Import Kraut Tree File", {}, "Kraut Tree (*.tree)");
+  if (sSelectedFile.IsEmpty())
     return;
 
   KrautOSFileStreamIn kstream;
-  if (kstream.m_File.Open(sSelectedFile.toUtf8().constData(), plFileOpenMode::Read).Failed())
+  if (kstream.m_File.Open(sSelectedFile, plFileOpenMode::Read).Failed())
   {
-    QMessageBox::warning(this, "Import Failed", QString("Could not open file:\n%1").arg(sSelectedFile));
+    plEditorUiServices::MessageBoxWarning(plFmt("Import Failed: could not open file:\n{}", sSelectedFile));
     return;
   }
 
@@ -367,7 +285,7 @@ void plQtKrautTreeAssetDocumentWindow::ImportKrautFile()
 
   if (!ts.Deserialize(kstream))
   {
-    QMessageBox::warning(this, "Import Failed", "Failed to parse the Kraut tree file. The file may be corrupt or in an unsupported format.");
+    plEditorUiServices::MessageBoxWarning("Import Failed: the Kraut tree file could not be parsed. The file may be corrupt or in an unsupported format.");
     return;
   }
 
@@ -525,7 +443,7 @@ void plQtKrautTreeAssetDocumentWindow::ImportKrautFile()
   pHistory->FinishTransaction();
 }
 
-void plQtKrautTreeAssetDocumentWindow::UpdatePreview()
+void plKrautTreeAssetDocumentWindow::UpdatePreview()
 {
   if (plEditorEngineProcessConnection::GetSingleton()->IsProcessCrashed())
     return;
@@ -557,14 +475,14 @@ void plQtKrautTreeAssetDocumentWindow::UpdatePreview()
   plEditorEngineProcessConnection::GetSingleton()->SendMessage(&msg);
 }
 
-void plQtKrautTreeAssetDocumentWindow::InternalRedraw()
+void plKrautTreeAssetDocumentWindow::InternalRedraw()
 {
   plEditorInputContext::UpdateActiveInputContext();
   SendRedrawMsg();
-  plQtEngineDocumentWindow::InternalRedraw();
+  plEngineDocumentWindow::InternalRedraw();
 }
 
-void plQtKrautTreeAssetDocumentWindow::ProcessMessageEventHandler(const plEditorEngineDocumentMsg* pMsg)
+void plKrautTreeAssetDocumentWindow::ProcessMessageEventHandler(const plEditorEngineDocumentMsg* pMsg)
 {
   if (pMsg->GetDynamicRTTI()->IsDerivedFrom<plQuerySelectionBBoxResultMsgToEditor>())
   {
@@ -583,10 +501,10 @@ void plQtKrautTreeAssetDocumentWindow::ProcessMessageEventHandler(const plEditor
     return;
   }
 
-  plQtEngineDocumentWindow::ProcessMessageEventHandler(pMsg);
+  plEngineDocumentWindow::ProcessMessageEventHandler(pMsg);
 }
 
-void plQtKrautTreeAssetDocumentWindow::PropertyEventHandler(const plDocumentObjectPropertyEvent& e)
+void plKrautTreeAssetDocumentWindow::PropertyEventHandler(const plDocumentObjectPropertyEvent& e)
 {
   if (e.m_sProperty == "DisplayRandomSeed")
   {
@@ -613,9 +531,9 @@ void plQtKrautTreeAssetDocumentWindow::PropertyEventHandler(const plDocumentObje
   }
 }
 
-void plQtKrautTreeAssetDocumentWindow::RebuildBranchTypeCombo()
+void plKrautTreeAssetDocumentWindow::RebuildBranchTypeCombo()
 {
-  if (m_pBranchTypeCombo == nullptr)
+  if (m_pBranchControls == nullptr)
     return;
 
   plDocumentObject* pRootObject = GetDocument()->GetObjectManager()->GetRootObject()->GetChildren()[0];
@@ -654,45 +572,42 @@ void plQtKrautTreeAssetDocumentWindow::RebuildBranchTypeCombo()
                       (bSubBranch2 && GetBoolProp("BT_SubBranch2", "GrowSubBranchType3")) ||
                       (bSubBranch3 && GetBoolProp("BT_SubBranch3", "GrowSubBranchType3"));
 
-  const QString sPrevData = m_pBranchTypeCombo->currentData().toString();
+  const plInt32 iPrevious = m_pBranchControls->GetSelected(m_uiBranchTypeCombo);
+  const plString sPrevProp = iPrevious >= 0 && iPrevious < (plInt32)m_BranchTypeProps.GetCount() ? m_BranchTypeProps[iPrevious] : plString();
 
-  m_pBranchTypeCombo->blockSignals(true);
-  m_pBranchTypeCombo->clear();
+  plHybridArray<plString, 10> names;
+  m_BranchTypeProps.Clear();
+  auto add = [&](const char* szName, const char* szProp, bool bShown)
+  {
+    if (!bShown)
+      return;
+    names.PushBack(szName);
+    m_BranchTypeProps.PushBack(szProp);
+  };
 
-  m_pBranchTypeCombo->addItem(plKrautBranchTypeNames::Trunk, "BT_Trunk1");
-  if (bMainBranch1)
-    m_pBranchTypeCombo->addItem(plKrautBranchTypeNames::MainBranch1, "BT_MainBranch1");
-  if (bMainBranch2)
-    m_pBranchTypeCombo->addItem(plKrautBranchTypeNames::MainBranch2, "BT_MainBranch2");
-  if (bMainBranch3)
-    m_pBranchTypeCombo->addItem(plKrautBranchTypeNames::MainBranch3, "BT_MainBranch3");
-  if (bSubBranch1)
-    m_pBranchTypeCombo->addItem(plKrautBranchTypeNames::SubBranch1, "BT_SubBranch1");
-  if (bSubBranch2)
-    m_pBranchTypeCombo->addItem(plKrautBranchTypeNames::SubBranch2, "BT_SubBranch2");
-  if (bSubBranch3)
-    m_pBranchTypeCombo->addItem(plKrautBranchTypeNames::SubBranch3, "BT_SubBranch3");
-  if (bTwig1)
-    m_pBranchTypeCombo->addItem(plKrautBranchTypeNames::Twig1, "BT_Twig1");
-  if (bTwig2)
-    m_pBranchTypeCombo->addItem(plKrautBranchTypeNames::Twig2, "BT_Twig2");
-  if (bTwig3)
-    m_pBranchTypeCombo->addItem(plKrautBranchTypeNames::Twig3, "BT_Twig3");
+  add(plKrautBranchTypeNames::Trunk, "BT_Trunk1", true);
+  add(plKrautBranchTypeNames::MainBranch1, "BT_MainBranch1", bMainBranch1);
+  add(plKrautBranchTypeNames::MainBranch2, "BT_MainBranch2", bMainBranch2);
+  add(plKrautBranchTypeNames::MainBranch3, "BT_MainBranch3", bMainBranch3);
+  add(plKrautBranchTypeNames::SubBranch1, "BT_SubBranch1", bSubBranch1);
+  add(plKrautBranchTypeNames::SubBranch2, "BT_SubBranch2", bSubBranch2);
+  add(plKrautBranchTypeNames::SubBranch3, "BT_SubBranch3", bSubBranch3);
+  add(plKrautBranchTypeNames::Twig1, "BT_Twig1", bTwig1);
+  add(plKrautBranchTypeNames::Twig2, "BT_Twig2", bTwig2);
+  add(plKrautBranchTypeNames::Twig3, "BT_Twig3", bTwig3);
 
   // Restore previous selection, fall back to Trunk if it is no longer present
-  const int iNewIndex = m_pBranchTypeCombo->findData(sPrevData);
-  const int iSelectIndex = iNewIndex >= 0 ? iNewIndex : 0;
-  m_pBranchTypeCombo->setCurrentIndex(iSelectIndex);
-  m_pBranchTypeCombo->blockSignals(false);
+  const plUInt32 uiPrevious = m_BranchTypeProps.IndexOf(sPrevProp);
+  const int iSelectIndex = uiPrevious != plInvalidIndex ? (int)uiPrevious : 0;
+  m_pBranchControls->SetChoices(m_uiBranchTypeCombo, names, iSelectIndex);
 
-  // Always explicitly sync the property grid, since setCurrentIndex may not emit
-  // a signal when the index did not change (e.g. on first population of the combo)
-  onBranchTypeSelected(iSelectIndex);
+  // Setting the choices reports nothing; sync the property grid.
+  OnBranchTypeSelected(iSelectIndex);
 }
 
-void plQtKrautTreeAssetDocumentWindow::RebuildLodCombo()
+void plKrautTreeAssetDocumentWindow::RebuildLodCombo()
 {
-  if (m_pLodCombo == nullptr)
+  if (m_pLodControls == nullptr)
     return;
 
   plDocumentObject* pRoot = GetDocument()->GetObjectManager()->GetRootObject()->GetChildren()[0];
@@ -722,11 +637,11 @@ void plQtKrautTreeAssetDocumentWindow::RebuildLodCombo()
     }
   }
 
-  m_pLodCombo->blockSignals(true);
-  m_pLodCombo->clear();
-
   // "Full Detail" is always the first entry and maps to LOD override -1 (distance-based selection)
-  m_pLodCombo->addItem("Full Detail", -1);
+  plHybridArray<plString, 6> names;
+  m_LodChoices.Clear();
+  names.PushBack("Full Detail");
+  m_LodChoices.PushBack(-1);
 
   // iSelectIndex defaults to 0 ("Full Detail"), overridden below if m_iCurrentLodIndex matches a LOD
   int iSelectIndex = 0;
@@ -734,34 +649,27 @@ void plQtKrautTreeAssetDocumentWindow::RebuildLodCombo()
   {
     if (bLodActive[i])
     {
-      m_pLodCombo->addItem(s_szLodNames[i], i);
+      names.PushBack(s_szLodNames[i]);
+      m_LodChoices.PushBack(i);
       if (i == m_iCurrentLodIndex)
-        iSelectIndex = m_pLodCombo->count() - 1;
+        iSelectIndex = (int)m_LodChoices.GetCount() - 1;
     }
   }
 
-  iSelectIndex = plMath::Clamp(iSelectIndex, 0, m_pLodCombo->count() - 1);
-  m_pLodCombo->setCurrentIndex(iSelectIndex);
-  m_pLodCombo->blockSignals(false);
+  m_pLodControls->SetChoices(m_uiLodCombo, names, iSelectIndex);
+  m_pLodControls->SetEnabled(m_uiAddLodButton, iNumActiveLods < 5);
+  m_pLodControls->SetEnabled(m_uiDeleteLodButton, m_LodChoices[iSelectIndex] == iLastActiveLodIndex && iLastActiveLodIndex > 0);
 
-  if (m_pAddLodButton)
-    m_pAddLodButton->setEnabled(iNumActiveLods < 5);
-  if (m_pDeleteLodButton)
-  {
-    const int iSelectedLodIndex = m_pLodCombo->itemData(iSelectIndex).toInt();
-    m_pDeleteLodButton->setEnabled(iSelectedLodIndex == iLastActiveLodIndex && iLastActiveLodIndex > 0);
-  }
-
-  onLodSelected(iSelectIndex);
+  OnLodSelected(iSelectIndex);
 }
 
-void plQtKrautTreeAssetDocumentWindow::onBranchTypeSelected(int index)
+void plKrautTreeAssetDocumentWindow::OnBranchTypeSelected(int index)
 {
-  if (m_pBranchProps == nullptr || m_pBranchTypeCombo == nullptr)
+  if (m_pBranchProps == nullptr || index < 0 || index >= (int)m_BranchTypeProps.GetCount())
     return;
 
-  const QByteArray sParentProp = m_pBranchTypeCombo->itemData(index).toString().toUtf8();
-  if (sParentProp.isEmpty())
+  const plString& sParentProp = m_BranchTypeProps[index];
+  if (sParentProp.IsEmpty())
     return;
 
   plDocumentObject* pRootObject = GetDocument()->GetObjectManager()->GetRootObject()->GetChildren()[0];
@@ -769,7 +677,7 @@ void plQtKrautTreeAssetDocumentWindow::onBranchTypeSelected(int index)
 
   for (plDocumentObject* pChild : pRootObject->GetChildren())
   {
-    if (pChild->GetParentProperty() == sParentProp.constData())
+    if (pChild->GetParentProperty() == sParentProp)
     {
       pSelected = pChild;
       break;
@@ -785,22 +693,23 @@ void plQtKrautTreeAssetDocumentWindow::onBranchTypeSelected(int index)
   m_pBranchProps->SetSelection(sel);
 }
 
-plDocumentObject* plQtKrautTreeAssetDocumentWindow::GetCurrentBranchTypeObject() const
+plDocumentObject* plKrautTreeAssetDocumentWindow::GetCurrentBranchTypeObject() const
 {
-  if (m_pBranchTypeCombo == nullptr)
+  const plInt32 iSelected = m_pBranchControls != nullptr ? m_pBranchControls->GetSelected(m_uiBranchTypeCombo) : -1;
+  if (iSelected < 0 || iSelected >= (plInt32)m_BranchTypeProps.GetCount())
     return nullptr;
 
-  const QByteArray sProp = m_pBranchTypeCombo->currentData().toString().toUtf8();
+  const plString& sProp = m_BranchTypeProps[iSelected];
   plDocumentObject* pRoot = GetDocument()->GetObjectManager()->GetRootObject()->GetChildren()[0];
   for (plDocumentObject* pChild : pRoot->GetChildren())
   {
-    if (pChild->GetParentProperty() == sProp.constData())
+    if (pChild->GetParentProperty() == sProp)
       return pChild;
   }
   return nullptr;
 }
 
-plDocumentObject* plQtKrautTreeAssetDocumentWindow::GetCurrentLodObject() const
+plDocumentObject* plKrautTreeAssetDocumentWindow::GetCurrentLodObject() const
 {
   if (m_iCurrentLodIndex < 0)
     return nullptr;
@@ -813,7 +722,7 @@ plDocumentObject* plQtKrautTreeAssetDocumentWindow::GetCurrentLodObject() const
   return nullptr;
 }
 
-void plQtKrautTreeAssetDocumentWindow::CopyObjectToClipboard(const plDocumentObject* pObject, const char* szMimeType)
+void plKrautTreeAssetDocumentWindow::CopyObjectToClipboard(const plDocumentObject* pObject, const char* szMimeType)
 {
   if (pObject == nullptr)
     return;
@@ -826,25 +735,26 @@ void plQtKrautTreeAssetDocumentWindow::CopyObjectToClipboard(const plDocumentObj
   plMemoryStreamWriter memWriter(&streamStorage);
   plAbstractGraphDdlSerializer::Write(memWriter, &graph, nullptr, false);
 
-  QMimeData* pMimeData = new QMimeData();
-  pMimeData->setData(szMimeType, QByteArray((const char*)streamStorage.GetData(), streamStorage.GetStorageSize32()));
-  QApplication::clipboard()->setMimeData(pMimeData);
+  const plArrayPtr<const plUInt8> bytes(streamStorage.GetData(), streamStorage.GetStorageSize32());
+  plEditorPlatform::SetClipboardBytes(szMimeType, bytes);
 }
 
-void plQtKrautTreeAssetDocumentWindow::PasteObjectFromClipboard(plDocumentObject* pObject, const char* szMimeType, const char* szTransactionName)
+void plKrautTreeAssetDocumentWindow::PasteObjectFromClipboard(plDocumentObject* pObject, const char* szMimeType, const char* szTransactionName)
 {
   if (pObject == nullptr)
     return;
 
-  const QMimeData* pMimeData = QApplication::clipboard()->mimeData();
-  if (!pMimeData->hasFormat(szMimeType))
+  plDynamicArray<plUInt8> data;
+  if (!plEditorPlatform::GetClipboardBytes(szMimeType, data))
     return;
 
-  const QByteArray data = pMimeData->data(szMimeType);
+  // the OS may pad the bytes with zeros
+  while (!data.IsEmpty() && data.PeekBack() == 0)
+    data.PopBack();
 
   plAbstractObjectGraph clipboardGraph;
   {
-    plRawMemoryStreamReader memReader(data.constData(), data.size());
+    plRawMemoryStreamReader memReader(data.GetData(), data.GetCount());
     if (plAbstractGraphDdlSerializer::Read(memReader, &clipboardGraph).Failed())
       return;
   }
@@ -875,35 +785,34 @@ void plQtKrautTreeAssetDocumentWindow::PasteObjectFromClipboard(plDocumentObject
   accessor.FinishTransaction();
 }
 
-void plQtKrautTreeAssetDocumentWindow::onCopyBranchType()
+void plKrautTreeAssetDocumentWindow::OnCopyBranchType()
 {
   CopyObjectToClipboard(GetCurrentBranchTypeObject(), s_szBranchTypeMimeType);
 }
 
-void plQtKrautTreeAssetDocumentWindow::onPasteBranchType()
+void plKrautTreeAssetDocumentWindow::OnPasteBranchType()
 {
   PasteObjectFromClipboard(GetCurrentBranchTypeObject(), s_szBranchTypeMimeType, "Paste Branch Type");
 }
 
-void plQtKrautTreeAssetDocumentWindow::onCopyLod()
+void plKrautTreeAssetDocumentWindow::OnCopyLod()
 {
   CopyObjectToClipboard(GetCurrentLodObject(), s_szLodMimeType);
 }
 
-void plQtKrautTreeAssetDocumentWindow::onPasteLod()
+void plKrautTreeAssetDocumentWindow::OnPasteLod()
 {
   PasteObjectFromClipboard(GetCurrentLodObject(), s_szLodMimeType, "Paste LOD");
 }
 
-void plQtKrautTreeAssetDocumentWindow::onLodSelected(int index)
+void plKrautTreeAssetDocumentWindow::OnLodSelected(int index)
 {
-  if (m_pLodProps == nullptr || m_pLodCombo == nullptr)
+  if (m_pLodProps == nullptr || index < 0 || index >= (int)m_LodChoices.GetCount())
     return;
 
-  m_iCurrentLodIndex = m_pLodCombo->itemData(index).toInt();
+  m_iCurrentLodIndex = m_LodChoices[index];
 
   // Update delete button: only enabled when the last active LOD is currently selected
-  if (m_pDeleteLodButton)
   {
     plDocumentObject* pRoot = GetDocument()->GetObjectManager()->GetRootObject()->GetChildren()[0];
     int iLastActiveLodIndex = 0;
@@ -919,7 +828,7 @@ void plQtKrautTreeAssetDocumentWindow::onLodSelected(int index)
         }
       }
     }
-    m_pDeleteLodButton->setEnabled(m_iCurrentLodIndex == iLastActiveLodIndex && iLastActiveLodIndex > 0);
+    m_pLodControls->SetEnabled(m_uiDeleteLodButton, m_iCurrentLodIndex == iLastActiveLodIndex && iLastActiveLodIndex > 0);
   }
 
   // Update property grid: show the selected LOD's properties, or clear it for "Full Detail"
@@ -935,7 +844,7 @@ void plQtKrautTreeAssetDocumentWindow::onLodSelected(int index)
   }
 
   // In auto mode the engine selects the LOD by distance; only send an override in fixed mode
-  if (m_pAutoLodCheckbox == nullptr || !m_pAutoLodCheckbox->isChecked())
+  if (!m_pLodControls->IsChecked(m_uiAutoLodCheckbox))
   {
     // LOD index 0 = full-detail, 1..N = regular LODs (m_iCurrentLodIndex + 1)
     // m_iCurrentLodIndex == -1 (Full Detail) maps to override index 0
@@ -948,7 +857,7 @@ void plQtKrautTreeAssetDocumentWindow::onLodSelected(int index)
   }
 }
 
-void plQtKrautTreeAssetDocumentWindow::onAutoLodToggled(bool bChecked)
+void plKrautTreeAssetDocumentWindow::OnAutoLodToggled(bool bChecked)
 {
   plSimpleDocumentConfigMsgToEngine msg;
   msg.m_sWhatToDo = "SetLodOverride";
@@ -968,7 +877,7 @@ void plQtKrautTreeAssetDocumentWindow::onAutoLodToggled(bool bChecked)
   GetDocument()->SendMessageToEngine(&msg);
 }
 
-void plQtKrautTreeAssetDocumentWindow::onAddLod()
+void plKrautTreeAssetDocumentWindow::OnAddLod()
 {
   plDocumentObject* pRoot = GetDocument()->GetObjectManager()->GetRootObject()->GetChildren()[0];
 
@@ -1031,7 +940,7 @@ void plQtKrautTreeAssetDocumentWindow::onAddLod()
   pHistory->FinishTransaction();
 }
 
-void plQtKrautTreeAssetDocumentWindow::onDeleteLod()
+void plKrautTreeAssetDocumentWindow::OnDeleteLod()
 {
   // The delete button is only enabled when the last active LOD is currently selected.
   plDocumentObject* pLodObject = GetCurrentLodObject();
@@ -1053,7 +962,7 @@ void plQtKrautTreeAssetDocumentWindow::onDeleteLod()
   pHistory->FinishTransaction();
 }
 
-void plQtKrautTreeAssetDocumentWindow::ApplyLodPreset(int iPresetIndex)
+void plKrautTreeAssetDocumentWindow::ApplyLodPreset(int iPresetIndex)
 {
   PL_ASSERT_DEV(iPresetIndex >= 0 && iPresetIndex < (int)PL_ARRAY_SIZE(s_LodPresets), "Invalid preset index");
 
