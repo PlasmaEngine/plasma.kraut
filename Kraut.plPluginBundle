@@ -5,8 +5,8 @@ PluginInfo
 {
 	string %DisplayName{"Kraut Tree"}
 	string %Category{"Rendering"}
-	string %MinEngineVersion{"0.11.2"}
-	string %MaxEngineVersion{"0.11.2"}
+	string %MinEngineVersion{"0.12.0"}
+	string %MaxEngineVersion{"0.12.0"}
 	string %Icon{"KrautIcon.png"}
     string %Banner{"KrautBanner.png"}
 	string %Description{"Adds support for procedurally generated trees."}
